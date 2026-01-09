@@ -1,0 +1,13 @@
+# 1. Ignore everything in the repository by default
+*
+
+# 2. Keep the .gitignore file itself (optional but recommended)
+!.gitignore
+
+# 3. Un-ignore the specific file and its parent directory
+# If main.c is in a folder named 'main' (Standard ESP-IDF structure):
+!main/
+!main/main.c
+
+# If main.c is in the root directory:
+!main.c
