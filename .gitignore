@@ -7,7 +7,7 @@
 # 3. Un-ignore the specific file and its parent directory
 # If main.c is in a folder named 'main' (Standard ESP-IDF structure):
 !main/
-!main/main.c
+!main/hello_world_main.c
 
 # If main.c is in the root directory:
-!main.c
+!hello_world_main.c
