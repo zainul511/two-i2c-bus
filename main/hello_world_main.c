@@ -57,28 +57,18 @@ void init_i2c_buses() {
 // --- NEW: I2C Scanner Function ---
 //Because we use two I2C buses we can use this function to scan both buses separately without rewriting code again.
 void i2c_scanner(i2c_port_t port) {
-    printf("\n--- Scanning I2C Bus %d ---\n", port);
-    int devices_found = 0; //Counter for found devices
-    
-    // Standard I2C addresses are 1 to 127
-    for (uint8_t addr = 1; addr < 127; addr++) {// Loop through all possible I2C addresses. Use unit8_t to save memory.
-        // Try to write 0 bytes to the address to see if it ACKs
-        esp_err_t res = i2c_master_write_to_device(port, addr, NULL, 0, 100 / portTICK_PERIOD_MS); //Send a write bit to device to acknowledge if there is a sensor in this address
-        
-        if (res == ESP_OK) {
-            printf("Device found at address: 0x%02X\n", addr);
-            devices_found++;
-        }
+    //only check the known addresses for MPU6050
+    uint8_t addrs[] = {0x68, 0x69};
+
+    for (int i=0; i<2; i++){
+        esp_err_t res = i2c_master_write_to_device(port, addrs[i], NULL, 0, 100 / portTICK_PERIOD_MS);
+        if (res == ESP_OK) printf("Bus %d: Device found at 0x%02X\n", port, addrs[i]);
+        else printf("Bus %d: Missing device at 0x%02X\n", port, addrs[i]);
     }
-    
-    if (devices_found == 0) {
-        printf("No devices found on Bus %d. Check pull-ups and wiring!\n", port);
-    }
-    printf("---------------------------\n");
 }
 
 // --- Modified Read Function (Safe Version) ---
-esp_err_t mpu6050_read_all(i2c_port_t port, uint8_t addr, mpu_data_t *result) {
+esp_err_t mpu6050_read_all(i2c_port_t port, uint8_t addr, mpu_data_t *result) { //returns a error code(esp_err_t), *result is a pointer to data structure.
     uint8_t reg = MPU6050_ACCEL_XOUT_H;
     uint8_t buffer[14]; 
 
