@@ -8,6 +8,7 @@
 # If main.c is in a folder named 'main' (Standard ESP-IDF structure):
 !main/
 !main/hello_world_main.c
-
+!main/hello_world_main.cpp
 # If main.c is in the root directory:
 !hello_world_main.c
+!hello_world_main.cpp
