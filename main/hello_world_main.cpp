@@ -13,7 +13,19 @@
 #define I2C1_SCL_IO 16
 #define I2C_FREQ_HZ 400000 // 400kHz for Fast Mode
 
+
+
 static const char *TAG = "MPU_TRIO";
+
+struct MPUOffsets { // Structure to hold offset values for each sensor
+    int ax,ay,az; // Accelerometer offsets
+    int gx,gy,gz; // Gyroscope offsets
+};
+
+// Offsets for each sensor (example values, should be calibrated for this setup)
+MPUOffsets offsets_S1 = {-1234, 450, 1200,  85, -12, 5};
+MPUOffsets offsets_S2 = {-1234, 450, 1200,  85, -12, 5};
+MPUOffsets offsets_S3 = {-1234, 450, 1200,  85, -12, 5};
 
 // Sensor Objects
 MPU6050 mpu1(0x68); // Will use Bus 0
@@ -52,17 +64,27 @@ void init_i2c_buses() {
 }
 
 // Helper to init DMP
-void init_sensor_dmp(MPU6050 &mpu, const char* name) {
+void init_sensor_dmp(MPU6050 &mpu, const char* name, MPUOffsets offsets) { 
     mpu.initialize();
-    if (mpu.testConnection() && mpu.dmpInitialize() == 0) {
-        mpu.setDMPEnabled(true);
-        ESP_LOGI(TAG, "%s DMP Ready!", name);
+
+    ESP_LOGI(TAG, "Applying offsets for %s...", name);
+    mpu.setXAccelOffset(offsets.ax);
+    mpu.setYAccelOffset(offsets.ay);
+    mpu.setZAccelOffset(offsets.az);
+    mpu.setXGyroOffset(offsets.gx);
+    mpu.setYGyroOffset(offsets.gy);
+    mpu.setZGyroOffset(offsets.gz);
+
+    if (mpu.testConnection() && mpu.dmpInitialize() == 0) { //Check mpu6050 connection and DMP is active.Send a small code chunk to DMP and it will reply with a status of zero if it is working properly
+        mpu.setDMPEnabled(true); //Enable the DMP
+        ESP_LOGI(TAG, "%s DMP Ready!", name); //Success Message
     } else {
         ESP_LOGE(TAG, "%s DMP Failed", name);
     }
 }
 
 // Helper to read and process DMP data (Compatible with older libraries)
+// Check the sensor's FIFO buffer is in valid state and read data.
 void process_dmp_data(MPU6050 &mpu, const char* name) {
     uint16_t fifoCount = mpu.getFIFOCount();
 
@@ -74,6 +96,8 @@ void process_dmp_data(MPU6050 &mpu, const char* name) {
     }
 
     // A standard DMP packet is 42 bytes. Wait until we have at least one full packet.
+    // Why DMP packet is 42 bytes: Quaternion (16) + Gyro (6) + Accel (6) + others (14) = 42 bytes.
+    //What are the "others"? Temperature, Timestamp, etc.
     if (fifoCount >= 42) {
         // Read exactly 42 bytes from the FIFO buffer
         mpu.getFIFOBytes(fifoBuffer, 42);
@@ -92,18 +116,19 @@ void process_dmp_data(MPU6050 &mpu, const char* name) {
 
 extern "C" void app_main(void) {
     init_i2c_buses();
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(100)); //PpdMS means "port delay in milliseconds"
+
 
     ESP_LOGI(TAG, "--- INITIALIZING SENSORS ---");
 
     // 1. Switch to Bus 0 -> Initialize S1 and S2
     I2Cdev::setI2CPort(I2C_NUM_0);
-    init_sensor_dmp(mpu1, "S1");
-    init_sensor_dmp(mpu2, "S2");
+    init_sensor_dmp(mpu1, "S1", offsets_S1);
+    init_sensor_dmp(mpu2, "S2", offsets_S2);
 
     // 2. Switch to Bus 1 -> Initialize S3
     I2Cdev::setI2CPort(I2C_NUM_1);
-    init_sensor_dmp(mpu3, "S3");
+    init_sensor_dmp(mpu3, "S3", offsets_S3);
 
     ESP_LOGI(TAG, "--- STARTING MAIN LOOP ---");
 
@@ -117,7 +142,10 @@ extern "C" void app_main(void) {
         I2Cdev::setI2CPort(I2C_NUM_1);
         process_dmp_data(mpu3, "S3");
 
-        // Poll at 100Hz (10ms) - Adjust based on your needs
-        vTaskDelay(pdMS_TO_TICKS(10)); 
+        // Poll at 100Hz (10ms) - I set DMP output rate to 100Hz during initialization.
+        vTaskDelay(pdMS_TO_TICKS(10));  //pdMS_TO_TICKS converts milliseconds to ticks based on FreeRTOS tick rate.
+                                        // 1ms ==> 1 tick if tick rate is 1000Hz.
+                                        // How we know tick rate? It's defined in FreeRTOSConfig.h as configTICK_RATE_HZ
+                                        //Can we change tick rate? Yes, but be careful as it affects timing across the entire RTOS.
     }
 }
