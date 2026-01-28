@@ -22,10 +22,10 @@ struct MPUOffsets { // Structure to hold offset values for each sensor
     int gx,gy,gz; // Gyroscope offsets
 };
 
-// Offsets for each sensor (example values, should be calibrated for this setup)
-MPUOffsets offsets_S1 = {-1234, 450, 1200,  85, -12, 5};
-MPUOffsets offsets_S2 = {-1234, 450, 1200,  85, -12, 5};
-MPUOffsets offsets_S3 = {-1234, 450, 1200,  85, -12, 5};
+// Offsets for each sensor (True Values. Can find the calibration code in experiment2 branch)
+MPUOffsets offsets_S1 = {-3478, -387, 896, 139, 8, -32};
+MPUOffsets offsets_S2 = {290, -4953, 1866, 104, 49, -40};
+MPUOffsets offsets_S3 = {-3534, -977, 1266, 50, -8, -38};
 
 // Sensor Objects
 MPU6050 mpu1(0x68); // Will use Bus 0
