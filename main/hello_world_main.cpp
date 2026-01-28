@@ -1,98 +1,93 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_log.h"
 #include "driver/i2c.h"
-
-// Library headers (adjust paths based on your component structure)
+#include "esp_log.h"
 #include "I2Cdev.h"
-#include "MPU6050_6Axis_MotionApps20.h"
+#include "MPU6050.h" // Note: We use the base class, not MotionApps for calibration
 
-#define GPIO_SDA 21
-#define GPIO_SCL 22
-#define I2C_FREQ_HZ 400000
+// --- Pin Definitions (Keep consistent with your main code) ---
+#define I2C0_SDA_IO 21
+#define I2C0_SCL_IO 22
+#define I2C1_SDA_IO 17
+#define I2C1_SCL_IO 16
+#define I2C_FREQ_HZ 400000 
 
-static const char *TAG = "MPU_DMP";
-MPU6050 mpu;
+static const char *TAG = "CALIBRATION";
 
-// Buffer for DMP packets
-uint8_t fifoBuffer[64];
-// Orientation/Motion variables
-Quaternion q;           // [w, x, y, z]
-VectorFloat gravity;    // [x, y, z]
-VectorInt16 aa;         // [x, y, z]            <-- Raw acceleration sensor measurements
-VectorInt16 aaReal;     // [x, y, z]            <-- Gravity-free acceleration measurements
-VectorInt16 gyro;       // [x, y, z]            <-- Raw gyroscope sensor measurements
-float ypr[3];           // [yaw, pitch, roll]
+// Sensor Objects
+MPU6050 mpu1(0x68); 
+MPU6050 mpu2(0x69); 
+MPU6050 mpu3(0x68); 
 
-void i2c_master_init() {
-    i2c_config_t conf = {};
-        conf.mode = I2C_MODE_MASTER;
-        conf.sda_io_num = (gpio_num_t)GPIO_SDA;
-        conf.scl_io_num = (gpio_num_t)GPIO_SCL;
-        conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-        conf.scl_pullup_en = GPIO_PULLUP_ENABLE,
-        conf.master.clk_speed = I2C_FREQ_HZ,
-        conf.clk_flags = 0; // Optional but good practice
+// Helper to init I2C (Same as before)
+void init_i2c_buses() {
+    i2c_config_t conf0 = {};
+    conf0.mode = I2C_MODE_MASTER;
+    conf0.sda_io_num = (gpio_num_t)I2C0_SDA_IO;
+    conf0.scl_io_num = (gpio_num_t)I2C0_SCL_IO;
+    conf0.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    conf0.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf0.master.clk_speed = I2C_FREQ_HZ;
+    i2c_param_config(I2C_NUM_0, &conf0);
+    i2c_driver_install(I2C_NUM_0, conf0.mode, 0, 0, 0);
+
+    i2c_config_t conf1 = {};
+    conf1.mode = I2C_MODE_MASTER;
+    conf1.sda_io_num = (gpio_num_t)I2C1_SDA_IO;
+    conf1.scl_io_num = (gpio_num_t)I2C1_SCL_IO;
+    conf1.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    conf1.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf1.master.clk_speed = I2C_FREQ_HZ;
+    i2c_param_config(I2C_NUM_1, &conf1);
+    i2c_driver_install(I2C_NUM_1, conf1.mode, 0, 0, 0);
+}
+
+// --- The Calibration Function ---
+void calibrate_single_mpu(MPU6050 &mpu, const char* name, i2c_port_t i2c_num) {
+    I2Cdev::setI2CPort(i2c_num);
     
-    i2c_param_config(I2C_NUM_0, &conf);
-    i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0);
-}
-extern "C" {
-    void app_main(void);
-}
-void app_main(void) {
-    // 1. Initialize I2C and MPU
-    i2c_master_init();
     mpu.initialize();
-
-    if (!mpu.testConnection()) {
-        ESP_LOGE(TAG, "MPU6050 connection failed");
+    if(!mpu.testConnection()){
+        ESP_LOGE(TAG, "%s Connection Failed", name);
         return;
     }
 
-    // 2. Initialize DMP
-    ESP_LOGI(TAG, "Initializing DMP...");
-    uint8_t devStatus = mpu.dmpInitialize();
+    ESP_LOGI(TAG, "Starting Calibration for %s. DO NOT MOVE SENSORS...", name);
+    
+    // We use the library's built-in PID calibration loop
+    // 6 loops of fine-tuning usually gets good results
+    mpu.CalibrateAccel(6);
+    mpu.CalibrateGyro(6);
+    
+    // Retrieve the calculated offsets
+    int16_t ax_off = mpu.getXAccelOffset();
+    int16_t ay_off = mpu.getYAccelOffset();
+    int16_t az_off = mpu.getZAccelOffset();
+    int16_t gx_off = mpu.getXGyroOffset();
+    int16_t gy_off = mpu.getYGyroOffset();
+    int16_t gz_off = mpu.getZGyroOffset();
 
-    // Supply your own gyro offsets here, scaled for min sensitivity
-    mpu.setXGyroOffset(220);
-    mpu.setYGyroOffset(76);
-    mpu.setZGyroOffset(-85);
-    mpu.setZAccelOffset(1788); 
+    printf("\n>>> COPY THIS FOR %s <<<\n", name);
+    printf("MPUOffsets offsets_%s = {%d, %d, %d, %d, %d, %d};\n", 
+            name, ax_off, ay_off, az_off, gx_off, gy_off, gz_off);
+    printf("--------------------------------------\n\n");
+}
 
-    if (devStatus == 0) {
-        // 3. Enable DMP
-        mpu.setDMPEnabled(true);
-        ESP_LOGI(TAG, "DMP enabled!");
-    } else {
-        ESP_LOGE(TAG, "DMP Init failed (code %d)", devStatus);
-        return;
-    }
+extern "C" void app_main(void) {
+    init_i2c_buses();
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Wait for power to stabilize
 
-    uint16_t packetSize = mpu.dmpGetFIFOPacketSize();
+    ESP_LOGI(TAG, "--- CALIBRATION START ---");
 
-    // 4. Main Loop
-    while (1) {
-        // Read packet from FIFO
-        mpu.getFIFOBytes(fifoBuffer, packetSize);
+    // Calibrate S1 (Bus 0, 0x68)
+    calibrate_single_mpu(mpu1, "S1", I2C_NUM_0);
+    
+    // Calibrate S2 (Bus 0, 0x69)
+    calibrate_single_mpu(mpu2, "S2", I2C_NUM_0);
 
-        // 1. Calculate Gravity (Necessary step to remove it from Accel)
-        mpu.dmpGetQuaternion(&q, fifoBuffer);
-        mpu.dmpGetGravity(&gravity, &q);
+    // Calibrate S3 (Bus 1, 0x68)
+    calibrate_single_mpu(mpu3, "S3", I2C_NUM_1);
 
-        // 2. Get Raw Accel and Remove Gravity
-        mpu.dmpGetAccel(&aa, fifoBuffer);
-        mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
-
-        // 3. Get Gyroscope
-        mpu.dmpGetGyro(&gyro, fifoBuffer);
-
-        // 4. Print Data (aaReal = Linear Accel, gyro = Gyroscope)
-        ESP_LOGI(TAG, "LinAccel X:%d Y:%d Z:%d | Gyro X:%d Y:%d Z:%d", 
-                aaReal.x, aaReal.y, aaReal.z, 
-                gyro.x, gyro.y, gyro.z);
-
-
-    }
+    ESP_LOGI(TAG, "--- CALIBRATION DONE ---");
 }
