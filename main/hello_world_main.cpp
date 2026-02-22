@@ -135,6 +135,8 @@ extern "C" void app_main(void) {
     // Initialize SYNC_PIN as input to read sync signal
     gpio_reset_pin((gpio_num_t)SYNC_PIN); // Reset the pin to default state
     gpio_set_direction((gpio_num_t)SYNC_PIN, GPIO_MODE_INPUT); // Set as input to read the sync signal from external source (Aaftabs 10Hz Pulse Generator)
+    // Force the pin to read 0 when unconnected
+    gpio_set_pull_mode((gpio_num_t)SYNC_PIN, GPIO_PULLDOWN_ONLY);
 
     vTaskDelay(pdMS_TO_TICKS(100)); //PpdMS means "port delay in milliseconds". Why this delay? To give some time for the I2C buses to stabilize before we start communicating with the sensors. 
                                     //It's a common practice to add a small delay after initializing hardware components.
